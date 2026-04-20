@@ -104,7 +104,7 @@ const staffNavItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
-  const { user, signOut, isDemo } = useAuth()
+  const { user, signOut } = useAuth()
   const { branches, currentBranchId, setCurrentBranchId, inventory } = useData()
   const { setTheme, theme } = useTheme()
   const { state } = useSidebar()
@@ -130,6 +130,11 @@ export function AppSidebar() {
     window.location.href = "/login"
   }
 
+  // Get current branch name for display
+  const currentBranchName = currentBranchId
+    ? branches.find((b) => b.id === currentBranchId)?.name?.replace("Arsenic Pharmacy - ", "") || "Unknown"
+    : "Select Branch"
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
@@ -143,7 +148,7 @@ export function AppSidebar() {
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold">Arsenic Pharmacy</span>
                   <span className="text-xs text-sidebar-foreground/60">
-                    {isDemo ? "Demo Mode" : "Inventory & POS"}
+                    Inventory & POS
                   </span>
                 </div>
               </Link>
@@ -153,22 +158,22 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Branch Selector - Admin only when sidebar is expanded */}
+        {/* Branch Selector — Admin must select a branch to work with */}
         {isAdmin && state === "expanded" && (
           <SidebarGroup>
-            <SidebarGroupLabel>Current Branch</SidebarGroupLabel>
+            <SidebarGroupLabel>Active Branch</SidebarGroupLabel>
             <SidebarGroupContent>
               <Select
-                value={currentBranchId || "all"}
+                value={currentBranchId || "none"}
                 onValueChange={(value) =>
-                  setCurrentBranchId(value === "all" ? null : value)
+                  setCurrentBranchId(value === "none" ? null : value)
                 }
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select branch" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Branches</SelectItem>
+                  <SelectItem value="none" disabled>Select a branch</SelectItem>
                   {branches.map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
                       {branch.name.replace("Arsenic Pharmacy - ", "")}
@@ -176,6 +181,30 @@ export function AppSidebar() {
                   ))}
                 </SelectContent>
               </Select>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Staff: show assigned branch name */}
+        {!isAdmin && state === "expanded" && currentBranchId && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Your Branch</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <div className="px-2 py-1.5 text-sm font-medium text-sidebar-foreground">
+                {branches.find((b) => b.id === currentBranchId)?.name?.replace("Arsenic Pharmacy - ", "") || "Loading..."}
+              </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* No branch selected warning for admin */}
+        {isAdmin && !currentBranchId && state === "expanded" && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <div className="flex items-center gap-2 px-2 py-2 rounded-md bg-warning/10 text-warning text-xs">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>Select a branch to manage data</span>
+              </div>
             </SidebarGroupContent>
           </SidebarGroup>
         )}
@@ -211,8 +240,8 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Quick Stats - Admin only */}
-        {isAdmin && lowStockCount > 0 && state === "expanded" && (
+        {/* Quick Stats - Low stock alert */}
+        {lowStockCount > 0 && state === "expanded" && (
           <SidebarGroup>
             <SidebarGroupLabel>Alerts</SidebarGroupLabel>
             <SidebarGroupContent>

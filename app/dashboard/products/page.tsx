@@ -55,6 +55,7 @@ import {
   FileText,
   Loader2,
   ArrowUpDown,
+  AlertTriangle,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Product, ProductCategory, ProductFormData } from "@/lib/types"
@@ -78,7 +79,7 @@ const emptyFormData: ProductFormData = {
 export default function ProductsPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { products, addProduct, updateProduct, deleteProduct, fetchProducts } = useData()
+  const { products, addProduct, updateProduct, deleteProduct, fetchProducts, currentBranchId, branches } = useData()
   
   // State
   const [searchQuery, setSearchQuery] = useState("")
@@ -93,22 +94,16 @@ export default function ProductsPage() {
   
   const isAdmin = user?.role === "admin"
 
-  // Redirect non-admin users
-  if (!isAdmin) {
-    router.push("/dashboard")
-    return null
-  }
+  const branchName = branches.find((b) => b.id === currentBranchId)?.name?.replace("Arsenic Pharmacy - ", "")
 
-  // Filter and sort products
+  // Filter and sort products (already branch-scoped from context)
   const filteredProducts = useMemo(() => {
     let items = [...products]
     
-    // Category filter
     if (selectedCategory !== "all") {
       items = items.filter((item) => item.category === selectedCategory)
     }
     
-    // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
       items = items.filter(
@@ -120,7 +115,6 @@ export default function ProductsPage() {
       )
     }
     
-    // Sort
     items.sort((a, b) => {
       let comparison = 0
       switch (sortField) {
@@ -140,7 +134,27 @@ export default function ProductsPage() {
     return items
   }, [products, selectedCategory, searchQuery, sortField, sortDirection])
 
-  // Handle sort toggle
+  // --- Conditional returns AFTER all hooks ---
+
+  // Redirect non-admin users
+  if (!isAdmin) {
+    router.push("/dashboard")
+    return null
+  }
+
+  // Admin must select a branch first
+  if (!currentBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">No Branch Selected</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          Select a branch from the sidebar to manage its product catalog.
+        </p>
+      </div>
+    )
+  }
+
   const handleSort = (field: "name" | "price" | "category") => {
     if (sortField === field) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))
@@ -150,7 +164,6 @@ export default function ProductsPage() {
     }
   }
 
-  // Open edit dialog
   const openEditDialog = (product: Product) => {
     setEditingProduct(product)
     setFormData({
@@ -168,14 +181,12 @@ export default function ProductsPage() {
     setShowAddDialog(true)
   }
 
-  // Close dialog
   const closeDialog = () => {
     setShowAddDialog(false)
     setEditingProduct(null)
     setFormData(emptyFormData)
   }
 
-  // Submit form
   const handleSubmit = async () => {
     if (!formData.name || !formData.sku || !formData.price) {
       toast.error("Please fill all required fields")
@@ -192,7 +203,6 @@ export default function ProductsPage() {
         toast.success("Product added")
       }
       closeDialog()
-      fetchProducts()
     } catch (error) {
       toast.error(editingProduct ? "Failed to update product" : "Failed to add product")
       console.error(error)
@@ -201,13 +211,11 @@ export default function ProductsPage() {
     }
   }
 
-  // Delete product
   const handleDelete = async (id: string) => {
     setDeletingId(id)
     try {
       await deleteProduct(id)
       toast.success("Product deleted")
-      fetchProducts()
     } catch (error) {
       toast.error("Failed to delete product")
       console.error(error)
@@ -216,7 +224,6 @@ export default function ProductsPage() {
     }
   }
 
-  // Update form field
   const updateField = <K extends keyof ProductFormData>(
     field: K,
     value: ProductFormData[K]
@@ -231,7 +238,7 @@ export default function ProductsPage() {
         <div>
           <h1 className="text-2xl font-bold">Products Catalog</h1>
           <p className="text-muted-foreground text-sm">
-            Manage your pharmacy&apos;s product catalog
+            Managing products for <span className="font-medium">{branchName}</span>
           </p>
         </div>
         <Dialog open={showAddDialog} onOpenChange={(open) => !open && closeDialog()}>
@@ -249,7 +256,7 @@ export default function ProductsPage() {
               <DialogDescription>
                 {editingProduct
                   ? "Update the product details below"
-                  : "Fill in the product details below"}
+                  : `Adding product to ${branchName}`}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">

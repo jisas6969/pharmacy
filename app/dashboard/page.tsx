@@ -34,16 +34,9 @@ export default function DashboardPage() {
   const { sales, inventory, branches, products, currentBranchId } = useData()
   const isAdmin = user?.role === "admin"
 
-  // Filter data based on current branch selection
-  const filteredSales = useMemo(() => {
-    if (!currentBranchId) return sales
-    return sales.filter((sale) => sale.branchId === currentBranchId)
-  }, [sales, currentBranchId])
-
-  const filteredInventory = useMemo(() => {
-    if (!currentBranchId) return inventory
-    return inventory.filter((item) => item.branchId === currentBranchId)
-  }, [inventory, currentBranchId])
+  // All data is already branch-scoped from DataContext
+  const filteredSales = sales
+  const filteredInventory = inventory
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -107,28 +100,26 @@ export default function DashboardPage() {
     return days
   }, [filteredSales])
 
-  // Branch comparison data for admin
-  const branchData = useMemo(() => {
-    if (!isAdmin) return []
-    
-    const today = startOfDay(new Date())
-    
-    return branches.map((branch) => {
-      const branchSales = sales.filter(
-        (sale) => sale.branchId === branch.id && isSameDay(sale.createdAt, today)
-      )
-      const revenue = branchSales.reduce((sum, sale) => sum + sale.total, 0)
-      
-      return {
-        name: branch.name.replace("Arsenic Pharmacy - ", ""),
-        revenue: Math.round(revenue * 100) / 100,
-      }
-    })
-  }, [isAdmin, branches, sales])
-
-  // Chart colors (computed from CSS variables in JS)
-  const chartColor = "#3b82f6" // Primary blue
+  // Chart colors
+  const chartColor = "#3b82f6"
   const chartColorSecondary = "#60a5fa"
+
+  const branchName = branches.find((b) => b.id === currentBranchId)?.name
+
+  // --- Conditional returns AFTER all hooks ---
+
+  // If admin hasn't selected a branch, show prompt
+  if (isAdmin && !currentBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">No Branch Selected</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          Select a branch from the sidebar to view its dashboard data.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -138,10 +129,8 @@ export default function DashboardPage() {
           {isAdmin ? "Admin Dashboard" : "Staff Dashboard"}
         </h1>
         <p className="text-muted-foreground">
-          {currentBranchId
-            ? `Viewing: ${branches.find((b) => b.id === currentBranchId)?.name}`
-            : isAdmin
-            ? "Overview of all branches"
+          {branchName
+            ? `Viewing: ${branchName}`
             : "Your branch overview"}
         </p>
       </div>
@@ -206,7 +195,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalProducts}</div>
             <p className="text-xs text-muted-foreground">
-              Active in catalog
+              In this branch
             </p>
           </CardContent>
         </Card>
@@ -287,83 +276,41 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Branch Comparison (Admin) or Transactions Chart (Staff) */}
-        {isAdmin ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Branch Performance</CardTitle>
-              <CardDescription>Today&apos;s revenue by branch</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={branchData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis
-                      type="number"
-                      tick={{ fontSize: 12 }}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => `$${value}`}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      tick={{ fontSize: 11 }}
-                      tickLine={false}
-                      axisLine={false}
-                      width={80}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                      formatter={(value: number) => [`$${value.toFixed(2)}`, "Revenue"]}
-                    />
-                    <Bar dataKey="revenue" fill={chartColor} radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Transaction Volume</CardTitle>
-              <CardDescription>Last 7 days</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 12 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    <Bar dataKey="transactions" fill={chartColorSecondary} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Transactions Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Transaction Volume</CardTitle>
+            <CardDescription>Last 7 days</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 12 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                    }}
+                  />
+                  <Bar dataKey="transactions" fill={chartColorSecondary} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Low Stock Alert Table */}
@@ -387,9 +334,6 @@ export default function DashboardPage() {
                 >
                   <div className="flex flex-col gap-1">
                     <span className="font-medium">{item.product.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {branches.find((b) => b.id === item.branchId)?.name.replace("Arsenic Pharmacy - ", "")}
-                    </span>
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge variant={item.quantity === 0 ? "destructive" : "secondary"}>

@@ -1,14 +1,27 @@
 // User and Authentication Types
 export type UserRole = "admin" | "staff"
+export type UserStatus = "active" | "inactive"
 
 import { Timestamp } from "firebase/firestore"
 
+// Lightweight mapping stored at users/{uid} for auth lookup
+export interface UserMapping {
+  uid: string
+  role: UserRole
+  branchId: string | null // null for admin
+  email: string
+  name: string
+  status: UserStatus
+}
+
+// Full user profile stored at branches/{branchId}/users/{uid}
 export interface User {
   id: string
   email: string
   name: string
   role: UserRole
-  branchId: string | null
+  branchId: string | null // null for admin
+  status: UserStatus
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }
@@ -24,7 +37,7 @@ export interface Branch {
   updatedAt: Date
 }
 
-// Product Types
+// Product Types (stored at branches/{branchId}/products/{productId})
 export interface Product {
   id: string
   name: string
@@ -66,11 +79,11 @@ export const PRODUCT_CATEGORIES: { value: ProductCategory; label: string }[] = [
   { value: "other", label: "Other" },
 ]
 
-// Inventory Types
+// Inventory Types (stored at branches/{branchId}/inventory/{itemId})
+// branchId is implicit from the subcollection path
 export interface InventoryItem {
   id: string
   productId: string
-  branchId: string
   quantity: number
   criticalLevel: number
   batchNumber: string
@@ -79,15 +92,15 @@ export interface InventoryItem {
   updatedAt: Date
 }
 
+// Inventory joined with its product (both from same branch)
 export interface InventoryWithProduct extends InventoryItem {
   product: Product
-  branch: Branch
 }
 
-// Sale Types
+// Sale Types (stored at branches/{branchId}/sales/{saleId})
+// branchId is implicit from the subcollection path
 export interface Sale {
   id: string
-  branchId: string
   userId: string
   items: SaleItem[]
   subtotal: number
@@ -141,7 +154,6 @@ export interface DailySales {
   date: string
   total: number
   transactionCount: number
-  branchId: string
 }
 
 export interface BranchSalesComparison {
@@ -180,7 +192,6 @@ export interface ProductFormData {
 
 export interface InventoryFormData {
   productId: string
-  branchId: string
   quantity: number
   criticalLevel: number
   batchNumber: string

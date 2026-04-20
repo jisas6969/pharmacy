@@ -10,13 +10,6 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -34,7 +27,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Label } from "@/components/ui/label"
 import {
   Search,
   Plus,
@@ -55,7 +47,7 @@ import { cn } from "@/lib/utils"
 
 export default function POSPage() {
   const { user } = useAuth()
-  const { inventory, branches, createSale, fetchInventory, currentBranchId, setCurrentBranchId } = useData()
+  const { inventory, branches, createSale, fetchInventory, currentBranchId } = useData()
   
   // State
   const [searchQuery, setSearchQuery] = useState("")
@@ -63,7 +55,6 @@ export default function POSPage() {
   const [discount, setDiscount] = useState(0)
   const [customerName, setCustomerName] = useState("")
   const [prescriptionNumber, setPrescriptionNumber] = useState("")
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
@@ -73,44 +64,43 @@ export default function POSPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const isAdmin = user?.role === "admin"
 
-  // Set initial branch
-  useEffect(() => {
-    if (user?.role === "staff" && user.branchId) {
-      setSelectedBranchId(user.branchId)
-      setCurrentBranchId(user.branchId)
-    } else if (currentBranchId) {
-      setSelectedBranchId(currentBranchId)
-    } else if (branches.length > 0 && !selectedBranchId) {
-      setSelectedBranchId(branches[0].id)
-    }
-  }, [user, currentBranchId, branches, selectedBranchId, setCurrentBranchId])
-
-  // Fetch inventory when branch changes
-  useEffect(() => {
-    if (selectedBranchId) {
-      fetchInventory(selectedBranchId)
-    }
-  }, [selectedBranchId, fetchInventory])
-
-  // Filter inventory based on selected branch and search
+  // Filter inventory based on search (already branch-scoped from context)
   const filteredInventory = useMemo(() => {
-    let items = inventory.filter(
-      (item) => item.branchId === selectedBranchId && item.quantity > 0
-    )
-    
+    const map = new Map()
+
+    // 🔥 GROUP BY productId
+    inventory.forEach((item) => {
+      if (item.quantity <= 0) return
+
+      if (!map.has(item.productId)) {
+        map.set(item.productId, {
+          ...item,
+          quantity: item.quantity,
+          inventoryIds: [item.id],
+        })
+      } else {
+        const existing = map.get(item.productId)
+        existing.quantity += item.quantity
+        existing.inventoryIds.push(item.id)
+      }
+    })
+
+    let items = Array.from(map.values())
+
+    // 🔍 search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
       items = items.filter(
         (item) =>
-          item.product.name.toLowerCase().includes(query) ||
-          item.product.genericName.toLowerCase().includes(query) ||
-          item.product.barcode.includes(query) ||
-          item.product.sku.toLowerCase().includes(query)
+          item.product?.name?.toLowerCase().includes(query) ||
+          item.product?.genericName?.toLowerCase().includes(query) ||
+          item.product?.barcode?.includes(query) ||
+          item.product?.sku?.toLowerCase().includes(query)
       )
     }
-    
+
     return items
-  }, [inventory, selectedBranchId, searchQuery])
+  }, [inventory, searchQuery])
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -143,7 +133,6 @@ export default function POSPage() {
       const existing = prev.find((item) => item.inventoryId === invItem.id)
       
       if (existing) {
-        // Check stock
         if (existing.quantity >= invItem.quantity) {
           toast.error("Cannot add more - insufficient stock")
           return prev
@@ -167,7 +156,6 @@ export default function POSPage() {
       ]
     })
     
-    // Refocus search
     searchInputRef.current?.focus()
   }, [])
 
@@ -205,7 +193,7 @@ export default function POSPage() {
     setShowClearCartDialog(false)
   }, [])
 
-  // Process payment
+  // Process payment — createSale no longer needs branchId (uses context)
   const processPayment = async (method: PaymentMethod) => {
     if (cart.length === 0) {
       toast.error("Cart is empty")
@@ -220,7 +208,6 @@ export default function POSPage() {
     setIsProcessing(true)
     try {
       await createSale(
-        selectedBranchId,
         cart,
         method,
         discount,
@@ -232,9 +219,6 @@ export default function POSPage() {
       setShowPaymentDialog(false)
       setShowSuccessDialog(true)
       clearCart()
-      
-      // Refresh inventory
-      await fetchInventory(selectedBranchId)
     } catch (error) {
       toast.error("Failed to process sale")
       console.error(error)
@@ -246,17 +230,14 @@ export default function POSPage() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + K: Focus search
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault()
         searchInputRef.current?.focus()
       }
-      // F2: Open payment dialog
       if (e.key === "F2" && cart.length > 0) {
         e.preventDefault()
         setShowPaymentDialog(true)
       }
-      // Escape: Clear search or close dialogs
       if (e.key === "Escape") {
         if (showPaymentDialog) {
           setShowPaymentDialog(false)
@@ -270,36 +251,27 @@ export default function POSPage() {
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [cart.length, showPaymentDialog, searchQuery])
 
-  const currentBranch = branches.find((b) => b.id === selectedBranchId)
+  const currentBranch = branches.find((b) => b.id === currentBranchId)
+
+  // If no branch is selected (admin hasn't picked one), show prompt (AFTER all hooks)
+  if (!currentBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">No Branch Selected</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          Select a branch from the sidebar to use the POS system.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-8rem)]">
       {/* Product Search & List */}
       <div className="flex-1 flex flex-col gap-4">
-        {/* Branch Selector & Search */}
+        {/* Search */}
         <div className="flex flex-col sm:flex-row gap-3">
-          {isAdmin && (
-            <Select
-              value={selectedBranchId}
-              onValueChange={(value) => {
-                setSelectedBranchId(value)
-                setCurrentBranchId(value)
-                setCart([]) // Clear cart when switching branches
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-[220px]">
-                <SelectValue placeholder="Select branch" />
-              </SelectTrigger>
-              <SelectContent>
-                {branches.map((branch) => (
-                  <SelectItem key={branch.id} value={branch.id}>
-                    {branch.name.replace("Arsenic Pharmacy - ", "")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -325,7 +297,7 @@ export default function POSPage() {
           <CardHeader className="py-3 border-b">
             <CardTitle className="text-sm font-medium flex items-center justify-between">
               <span>
-                {currentBranch?.name.replace("Arsenic Pharmacy - ", "")} - Products
+                {currentBranch?.name?.replace("Arsenic Pharmacy - ", "")} - Products
               </span>
               <Badge variant="secondary">
                 {filteredInventory.length} items

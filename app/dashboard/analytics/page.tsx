@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { useData } from "@/contexts/data-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -14,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -25,8 +23,6 @@ import {
 } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
-  BarChart,
-  Bar,
   LineChart,
   Line,
   PieChart,
@@ -36,19 +32,19 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
+  BarChart,
+  Bar,
 } from "recharts"
 import {
   TrendingUp,
-  TrendingDown,
   DollarSign,
   ShoppingCart,
   Package,
-  Store,
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
+  AlertTriangle,
 } from "lucide-react"
 import {
   format,
@@ -56,8 +52,6 @@ import {
   startOfDay,
   endOfDay,
   isSameDay,
-  startOfWeek,
-  startOfMonth,
   isWithinInterval,
 } from "date-fns"
 import { cn } from "@/lib/utils"
@@ -67,18 +61,13 @@ type DateRange = "7d" | "30d" | "90d"
 export default function AnalyticsPage() {
   const router = useRouter()
   const { user } = useAuth()
-  const { sales, branches, products, inventory } = useData()
+  const { sales, branches, products, inventory, currentBranchId } = useData()
   
   const [dateRange, setDateRange] = useState<DateRange>("30d")
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("all")
   
   const isAdmin = user?.role === "admin"
 
-  // Redirect non-admin users
-  if (!isAdmin) {
-    router.push("/dashboard")
-    return null
-  }
+  const branchName = branches.find((b) => b.id === currentBranchId)?.name?.replace("Arsenic Pharmacy - ", "")
 
   // Date range calculations
   const dateRangeConfig = useMemo(() => {
@@ -94,17 +83,15 @@ export default function AnalyticsPage() {
     }
   }, [dateRange])
 
-  // Filter sales by date range and branch
+  // Filter sales by date range (already branch-scoped from context)
   const filteredSales = useMemo(() => {
     return sales.filter((sale) => {
-      const inDateRange = isWithinInterval(sale.createdAt, {
+      return isWithinInterval(sale.createdAt, {
         start: dateRangeConfig.startDate,
         end: dateRangeConfig.endDate,
       })
-      const inBranch = selectedBranchId === "all" || sale.branchId === selectedBranchId
-      return inDateRange && inBranch
     })
-  }, [sales, dateRangeConfig, selectedBranchId])
+  }, [sales, dateRangeConfig])
 
   // Previous period for comparison
   const previousPeriodSales = useMemo(() => {
@@ -112,14 +99,12 @@ export default function AnalyticsPage() {
     const prevEnd = subDays(dateRangeConfig.startDate, 1)
     
     return sales.filter((sale) => {
-      const inDateRange = isWithinInterval(sale.createdAt, {
+      return isWithinInterval(sale.createdAt, {
         start: prevStart,
         end: prevEnd,
       })
-      const inBranch = selectedBranchId === "all" || sale.branchId === selectedBranchId
-      return inDateRange && inBranch
     })
-  }, [sales, dateRangeConfig, selectedBranchId])
+  }, [sales, dateRangeConfig])
 
   // KPIs
   const kpis = useMemo(() => {
@@ -134,14 +119,11 @@ export default function AnalyticsPage() {
       : 0
     
     const avgTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0
-    const prevAvgTransaction = prevTransactions > 0
-      ? prevRevenue / prevTransactions
-      : 0
+    const prevAvgTransaction = prevTransactions > 0 ? prevRevenue / prevTransactions : 0
     const avgChange = prevAvgTransaction > 0
       ? ((avgTransaction - prevAvgTransaction) / prevAvgTransaction) * 100
       : 0
     
-    // Items sold
     const itemsSold = filteredSales.reduce(
       (sum, sale) => sum + sale.items.reduce((s, item) => s + item.quantity, 0),
       0
@@ -177,7 +159,7 @@ export default function AnalyticsPage() {
       const transactions = daySales.length
       
       data.push({
-        date: format(date, dateRange === "7d" ? "EEE" : dateRange === "30d" ? "MMM d" : "MMM d"),
+        date: format(date, dateRange === "7d" ? "EEE" : "MMM d"),
         revenue: Math.round(revenue * 100) / 100,
         transactions,
       })
@@ -185,22 +167,6 @@ export default function AnalyticsPage() {
     
     return data
   }, [filteredSales, dateRangeConfig.days, dateRange])
-
-  // Branch comparison data
-  const branchComparisonData = useMemo(() => {
-    return branches.map((branch) => {
-      const branchSales = filteredSales.filter((sale) => sale.branchId === branch.id)
-      const revenue = branchSales.reduce((sum, sale) => sum + sale.total, 0)
-      const transactions = branchSales.length
-      
-      return {
-        name: branch.name.replace("Arsenic Pharmacy - ", ""),
-        revenue: Math.round(revenue * 100) / 100,
-        transactions,
-        avgTransaction: transactions > 0 ? Math.round((revenue / transactions) * 100) / 100 : 0,
-      }
-    }).sort((a, b) => b.revenue - a.revenue)
-  }, [branches, filteredSales])
 
   // Top selling products
   const topProducts = useMemo(() => {
@@ -243,9 +209,29 @@ export default function AnalyticsPage() {
   }, [filteredSales])
 
   // Chart colors
-  const COLORS = ["#3b82f6", "#60a5fa", "#93c5fd", "#bfdbfe", "#dbeafe"]
+  const COLORS = ["#3b82f6", "#60a5fa", "#93c5fd"]
   const primaryColor = "#3b82f6"
-  const secondaryColor = "#60a5fa"
+
+  // --- Conditional returns AFTER all hooks ---
+
+  // Redirect non-admin users
+  if (!isAdmin) {
+    router.push("/dashboard")
+    return null
+  }
+
+  // Admin must select a branch first
+  if (!currentBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">No Branch Selected</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          Select a branch from the sidebar to view its analytics.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -254,24 +240,10 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
           <p className="text-muted-foreground text-sm">
-            {dateRangeConfig.label} performance overview
+            {dateRangeConfig.label} performance for <span className="font-medium">{branchName}</span>
           </p>
         </div>
         <div className="flex gap-2">
-          <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
-            <SelectTrigger className="w-[180px]">
-              <Store className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="All branches" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Branches</SelectItem>
-              {branches.map((branch) => (
-                <SelectItem key={branch.id} value={branch.id}>
-                  {branch.name.replace("Arsenic Pharmacy - ", "")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
             <SelectTrigger className="w-[140px]">
               <Calendar className="h-4 w-4 mr-2" />
@@ -429,31 +401,28 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        {/* Branch Comparison */}
+        {/* Transaction Volume */}
         <Card>
           <CardHeader>
-            <CardTitle>Branch Performance</CardTitle>
-            <CardDescription>Revenue comparison by branch</CardDescription>
+            <CardTitle>Transaction Volume</CardTitle>
+            <CardDescription>Daily transactions for {dateRangeConfig.label.toLowerCase()}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={branchComparisonData} layout="vertical">
+                <BarChart data={dailyRevenueData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
-                    type="number"
+                    dataKey="date"
                     tick={{ fontSize: 11 }}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) => `$${value}`}
+                    interval={dateRange === "90d" ? 6 : dateRange === "30d" ? 4 : 0}
                   />
                   <YAxis
-                    type="category"
-                    dataKey="name"
                     tick={{ fontSize: 11 }}
                     tickLine={false}
                     axisLine={false}
-                    width={80}
                   />
                   <Tooltip
                     contentStyle={{
@@ -461,12 +430,8 @@ export default function AnalyticsPage() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
                     }}
-                    formatter={(value: number, name: string) => [
-                      name === "revenue" ? `$${value.toFixed(2)}` : value,
-                      name === "revenue" ? "Revenue" : "Transactions",
-                    ]}
                   />
-                  <Bar dataKey="revenue" fill={primaryColor} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="transactions" fill="#60a5fa" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

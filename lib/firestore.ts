@@ -1,24 +1,22 @@
 // lib/firestore.ts
+// All Firestore operations are now branch-scoped via subcollections.
 
 import {
   addDoc,
-  collection,
   serverTimestamp,
   getDocs,
-  query,
-  where,
   updateDoc,
   doc,
 } from "firebase/firestore"
-import { db, COLLECTIONS } from "@/lib/firebase"
+import { db, branchCollection, ROOT_COLLECTIONS, BRANCH_SUBS } from "@/lib/firebase"
 
 //
-// 🔹 ADD PRODUCT (CATALOG ONLY)
+// 🔹 ADD PRODUCT (to a specific branch)
 //
-export const addProduct = async (productData: any) => {
+export const addProduct = async (branchId: string, productData: any) => {
   if (!db) throw new Error("Firestore not initialized")
 
-  return await addDoc(collection(db, COLLECTIONS.PRODUCTS), {
+  return await addDoc(branchCollection(branchId, BRANCH_SUBS.PRODUCTS), {
     ...productData,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -26,11 +24,10 @@ export const addProduct = async (productData: any) => {
 }
 
 //
-// 🔹 ADD INVENTORY (STOCK PER BRANCH)
+// 🔹 ADD INVENTORY (to a specific branch)
 //
-export const addInventory = async (data: {
+export const addInventory = async (branchId: string, data: {
   productId: string
-  branchId: string
   quantity: number
   criticalLevel?: number
   batchNumber?: string
@@ -38,9 +35,8 @@ export const addInventory = async (data: {
 }) => {
   if (!db) throw new Error("Firestore not initialized")
 
-  return await addDoc(collection(db, COLLECTIONS.INVENTORY), {
+  return await addDoc(branchCollection(branchId, BRANCH_SUBS.INVENTORY), {
     productId: data.productId,
-    branchId: data.branchId,
     quantity: data.quantity,
     criticalLevel: data.criticalLevel ?? 10,
     batchNumber: data.batchNumber ?? "",
@@ -52,32 +48,31 @@ export const addInventory = async (data: {
 }
 
 //
-// 🔹 UPDATE INVENTORY (USED AFTER SALE)
+// 🔹 UPDATE INVENTORY STOCK (within a specific branch)
 //
 export const updateInventoryStock = async (
+  branchId: string,
   inventoryId: string,
   newQuantity: number
 ) => {
   if (!db) throw new Error("Firestore not initialized")
 
-  return await updateDoc(doc(db, COLLECTIONS.INVENTORY, inventoryId), {
-    quantity: newQuantity,
-    updatedAt: serverTimestamp(),
-  })
+  return await updateDoc(
+    doc(db, ROOT_COLLECTIONS.BRANCHES, branchId, BRANCH_SUBS.INVENTORY, inventoryId),
+    {
+      quantity: newQuantity,
+      updatedAt: serverTimestamp(),
+    }
+  )
 }
 
 //
-// 🔹 GET INVENTORY PER BRANCH
+// 🔹 GET INVENTORY FOR A BRANCH (reads the entire subcollection)
 //
 export const getInventoryByBranch = async (branchId: string) => {
   if (!db) throw new Error("Firestore not initialized")
 
-  const snapshot = await getDocs(
-    query(
-      collection(db, COLLECTIONS.INVENTORY),
-      where("branchId", "==", branchId)
-    )
-  )
+  const snapshot = await getDocs(branchCollection(branchId, BRANCH_SUBS.INVENTORY))
 
   return snapshot.docs.map((doc) => ({
     id: doc.id,

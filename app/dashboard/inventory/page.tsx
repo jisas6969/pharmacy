@@ -41,7 +41,6 @@ import {
   AlertTriangle,
   Plus,
   Edit2,
-  Filter,
   ArrowUpDown,
   Calendar,
   Loader2,
@@ -60,11 +59,18 @@ export default function InventoryPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useAuth()
-  const { inventory, branches, products, updateInventoryQuantity, addInventoryItem, fetchInventory, currentBranchId, setCurrentBranchId } = useData()
+  const {
+    inventory,
+    branches,
+    products,
+    updateInventoryQuantity,
+    addInventoryItem,
+    fetchInventory,
+    currentBranchId,
+  } = useData()
   
   // State
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedBranchId, setSelectedBranchId] = useState<string>("all")
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory | "all">("all")
   const [filterType, setFilterType] = useState<FilterType>("all")
   const [sortField, setSortField] = useState<SortField>("name")
@@ -75,7 +81,6 @@ export default function InventoryPage() {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [newItem, setNewItem] = useState({
     productId: "",
-    branchId: "",
     quantity: "",
     criticalLevel: "20",
     batchNumber: "",
@@ -93,34 +98,13 @@ export default function InventoryPage() {
     }
   }, [searchParams])
 
-  // Set initial branch for staff
-  useEffect(() => {
-    if (user?.role === "staff" && user.branchId) {
-      setSelectedBranchId(user.branchId)
-    }
-  }, [user])
-
-  // Fetch inventory when branch changes
-  useEffect(() => {
-    const branchId = selectedBranchId === "all" ? undefined : selectedBranchId
-    fetchInventory(branchId)
-    if (branchId) {
-      setCurrentBranchId(branchId)
-    }
-  }, [selectedBranchId, fetchInventory, setCurrentBranchId])
-
-  // Filter and sort inventory
+  // Filter and sort inventory (already branch-scoped from context)
   const filteredInventory = useMemo(() => {
     let items = [...inventory]
     
-    // Branch filter (for admin viewing all)
-    if (selectedBranchId !== "all") {
-      items = items.filter((item) => item.branchId === selectedBranchId)
-    }
-    
     // Category filter
     if (selectedCategory !== "all") {
-      items = items.filter((item) => item.product.category === selectedCategory)
+      items = items.filter((item) => item.product?.category === selectedCategory)
     }
     
     // Search filter
@@ -128,10 +112,10 @@ export default function InventoryPage() {
       const query = searchQuery.toLowerCase()
       items = items.filter(
         (item) =>
-          item.product.name.toLowerCase().includes(query) ||
-          item.product.genericName.toLowerCase().includes(query) ||
-          item.product.sku.toLowerCase().includes(query) ||
-          item.batchNumber.toLowerCase().includes(query)
+          item.product?.name?.toLowerCase().includes(query) ||
+          item.product?.genericName?.toLowerCase().includes(query) ||
+          item.product?.sku?.toLowerCase().includes(query) ||
+          item.batchNumber?.toLowerCase().includes(query)
       )
     }
     
@@ -140,6 +124,7 @@ export default function InventoryPage() {
       items = items.filter((item) => item.quantity <= item.criticalLevel)
     } else if (filterType === "expiring") {
       items = items.filter((item) => {
+        if (!item.expiryDate) return false
         const daysUntilExpiry = differenceInDays(item.expiryDate, new Date())
         return daysUntilExpiry <= 30 && daysUntilExpiry > 0
       })
@@ -150,39 +135,53 @@ export default function InventoryPage() {
       let comparison = 0
       switch (sortField) {
         case "name":
-          comparison = a.product.name.localeCompare(b.product.name)
+          comparison = (a.product?.name || "").localeCompare(b.product?.name || "")
           break
         case "quantity":
           comparison = a.quantity - b.quantity
           break
         case "expiry":
-          comparison = a.expiryDate.getTime() - b.expiryDate.getTime()
+          comparison = (a.expiryDate?.getTime() || 0) - (b.expiryDate?.getTime() || 0)
           break
         case "category":
-          comparison = a.product.category.localeCompare(b.product.category)
+          comparison = (a.product?.category || "").localeCompare(b.product?.category || "")
           break
       }
       return sortDirection === "asc" ? comparison : -comparison
     })
     
     return items
-  }, [inventory, selectedBranchId, selectedCategory, searchQuery, filterType, sortField, sortDirection])
+  }, [inventory, selectedCategory, searchQuery, filterType, sortField, sortDirection])
 
   // Stats
   const stats = useMemo(() => {
-    const targetItems = selectedBranchId === "all" ? inventory : inventory.filter((i) => i.branchId === selectedBranchId)
-    
-    const lowStock = targetItems.filter((item) => item.quantity <= item.criticalLevel).length
-    const expiringSoon = targetItems.filter((item) => {
+    const lowStock = inventory.filter((item) => item.quantity <= item.criticalLevel).length
+    const expiringSoon = inventory.filter((item) => {
+      if (!item.expiryDate) return false
       const daysUntilExpiry = differenceInDays(item.expiryDate, new Date())
       return daysUntilExpiry <= 30 && daysUntilExpiry > 0
     }).length
-    const outOfStock = targetItems.filter((item) => item.quantity === 0).length
+    const outOfStock = inventory.filter((item) => item.quantity === 0).length
     
-    return { lowStock, expiringSoon, outOfStock, total: targetItems.length }
-  }, [inventory, selectedBranchId])
+    return { lowStock, expiringSoon, outOfStock, total: inventory.length }
+  }, [inventory])
 
-  // Handle sort toggle
+  // Derive branch name (safe even when currentBranchId is null)
+  const branchName = branches.find((b) => b.id === currentBranchId)?.name?.replace("Arsenic Pharmacy - ", "")
+
+  // If no branch is selected, show prompt (AFTER all hooks)
+  if (!currentBranchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+        <h2 className="text-xl font-semibold">No Branch Selected</h2>
+        <p className="text-muted-foreground text-center max-w-md">
+          Select a branch from the sidebar to manage its inventory.
+        </p>
+      </div>
+    )
+  }
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))
@@ -192,7 +191,6 @@ export default function InventoryPage() {
     }
   }
 
-  // Update quantity
   const handleUpdateQuantity = async () => {
     if (!editingItem || !newQuantity) return
     
@@ -216,29 +214,44 @@ export default function InventoryPage() {
     }
   }
 
-  // Add inventory item
   const handleAddItem = async () => {
-    if (!newItem.productId || !newItem.branchId || !newItem.quantity || !newItem.batchNumber || !newItem.expiryDate) {
+    if (!newItem.productId || !newItem.quantity || !newItem.batchNumber || !newItem.expiryDate) {
       toast.error("Please fill all required fields")
       return
     }
-    
+
     setIsAdding(true)
     try {
-      await addInventoryItem({
-        productId: newItem.productId,
-        branchId: newItem.branchId,
-        quantity: parseInt(newItem.quantity),
-        criticalLevel: parseInt(newItem.criticalLevel) || 20,
-        batchNumber: newItem.batchNumber,
-        expiryDate: new Date(newItem.expiryDate),
-        lastRestocked: new Date(),
-      })
-      toast.success("Inventory item added")
+      const qtyToAdd = parseInt(newItem.quantity)
+
+      // Check if existing item with same product + batch
+      const existingItem = inventory.find(
+        (item) =>
+          item.productId === newItem.productId &&
+          item.batchNumber === newItem.batchNumber
+      )
+
+      if (existingItem) {
+        await updateInventoryQuantity(
+          existingItem.id,
+          existingItem.quantity + qtyToAdd
+        )
+        toast.success("Stock updated (added to existing)")
+      } else {
+        await addInventoryItem({
+          productId: newItem.productId,
+          quantity: qtyToAdd,
+          criticalLevel: parseInt(newItem.criticalLevel) || 20,
+          batchNumber: newItem.batchNumber,
+          expiryDate: new Date(newItem.expiryDate),
+          lastRestocked: new Date(),
+        })
+        toast.success("New inventory item added")
+      }
+
       setShowAddDialog(false)
       setNewItem({
         productId: "",
-        branchId: "",
         quantity: "",
         criticalLevel: "20",
         batchNumber: "",
@@ -253,6 +266,7 @@ export default function InventoryPage() {
   }
 
   const getExpiryStatus = (expiryDate: Date) => {
+    if (!expiryDate) return { label: "N/A", variant: "outline" as const }
     const days = differenceInDays(expiryDate, new Date())
     if (days < 0) return { label: "Expired", variant: "destructive" as const }
     if (days <= 30) return { label: `${days}d left`, variant: "secondary" as const }
@@ -267,7 +281,7 @@ export default function InventoryPage() {
         <div>
           <h1 className="text-2xl font-bold">Inventory Management</h1>
           <p className="text-muted-foreground text-sm">
-            Track and manage stock across {branches.length} branches
+            Managing stock for <span className="font-medium">{branchName}</span>
           </p>
         </div>
         {isAdmin && (
@@ -282,7 +296,7 @@ export default function InventoryPage() {
               <DialogHeader>
                 <DialogTitle>Add Inventory Stock</DialogTitle>
                 <DialogDescription>
-                  Add new stock to a branch&apos;s inventory
+                  Add new stock to {branchName}&apos;s inventory
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -299,24 +313,6 @@ export default function InventoryPage() {
                       {products.map((product) => (
                         <SelectItem key={product.id} value={product.id}>
                           {product.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Branch</Label>
-                  <Select
-                    value={newItem.branchId}
-                    onValueChange={(value) => setNewItem((prev) => ({ ...prev, branchId: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select branch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {branches.map((branch) => (
-                        <SelectItem key={branch.id} value={branch.id}>
-                          {branch.name.replace("Arsenic Pharmacy - ", "")}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -443,24 +439,8 @@ export default function InventoryPage() {
               />
             </div>
             
-            {/* Filters */}
+            {/* Category filter */}
             <div className="flex flex-wrap gap-2">
-              {isAdmin && (
-                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="All branches" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Branches</SelectItem>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id}>
-                        {branch.name.replace("Arsenic Pharmacy - ", "")}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              
               <Select value={selectedCategory} onValueChange={(v) => setSelectedCategory(v as ProductCategory | "all")}>
                 <SelectTrigger className="w-[160px]">
                   <SelectValue placeholder="All categories" />
@@ -521,9 +501,6 @@ export default function InventoryPage() {
                       <ArrowUpDown className="ml-2 h-4 w-4" />
                     </Button>
                   </TableHead>
-                  {isAdmin && selectedBranchId === "all" && (
-                    <TableHead>Branch</TableHead>
-                  )}
                   <TableHead>
                     <Button
                       variant="ghost"
@@ -567,22 +544,15 @@ export default function InventoryPage() {
                     <TableRow key={item.id}>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{item.product.name}</p>
+                          <p className="font-medium">{item.product?.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {item.product.genericName} | SKU: {item.product.sku}
+                            {item.product?.genericName} | SKU: {item.product?.sku}
                           </p>
                         </div>
                       </TableCell>
-                      {isAdmin && selectedBranchId === "all" && (
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {item.branch.name.replace("Arsenic Pharmacy - ", "")}
-                          </Badge>
-                        </TableCell>
-                      )}
                       <TableCell>
                         <Badge variant="secondary" className="text-xs">
-                          {PRODUCT_CATEGORIES.find((c) => c.value === item.product.category)?.label}
+                          {PRODUCT_CATEGORIES.find((c) => c.value === item.product?.category)?.label}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -625,7 +595,7 @@ export default function InventoryPage() {
                             <DialogHeader>
                               <DialogTitle>Update Stock</DialogTitle>
                               <DialogDescription>
-                                {item.product.name}
+                                {item.product?.name}
                               </DialogDescription>
                             </DialogHeader>
                             <div className="grid gap-4 py-4">
@@ -658,7 +628,7 @@ export default function InventoryPage() {
                 })}
                 {filteredInventory.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                       No inventory items found
                     </TableCell>
                   </TableRow>

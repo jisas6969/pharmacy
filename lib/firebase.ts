@@ -1,6 +1,6 @@
 import { initializeApp, getApps, FirebaseApp } from "firebase/app"
 import { getAuth, Auth } from "firebase/auth"
-import { getFirestore, Firestore } from "firebase/firestore"
+import { getFirestore, Firestore, collection, CollectionReference } from "firebase/firestore"
 
 // Firebase configuration - you'll need to add these environment variables
 const firebaseConfig = {
@@ -37,12 +37,26 @@ if (typeof window !== "undefined" && isFirebaseConfigured()) {
 
 export { app, auth, db }
 
-// Collection names for Firestore
-export const COLLECTIONS = {
+// ─── Top-level collection names ───
+export const ROOT_COLLECTIONS = {
+  USERS: "users",       // auth mapping: users/{uid}
+  BRANCHES: "branches", // branch docs: branches/{branchId}
+} as const
+
+// ─── Branch subcollection names ───
+export const BRANCH_SUBS = {
   USERS: "users",
-  BRANCHES: "branches",
   PRODUCTS: "products",
   INVENTORY: "inventory",
   SALES: "sales",
-  STOCK_TRANSFERS: "stockTransfers",
 } as const
+
+/**
+ * Get a reference to a branch subcollection.
+ * Usage: branchCollection("branchXYZ", "products")
+ *        → collection(db, "branches", "branchXYZ", "products")
+ */
+export function branchCollection(branchId: string, subcollection: string): CollectionReference {
+  if (!db) throw new Error("Firestore not initialized")
+  return collection(db, ROOT_COLLECTIONS.BRANCHES, branchId, subcollection)
+}

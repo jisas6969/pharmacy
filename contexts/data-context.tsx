@@ -9,13 +9,13 @@ import {
   updateDoc,
   deleteDoc,
   query,
-  where,
   orderBy,
   Timestamp,
   writeBatch,
   increment,
+  getDoc,
 } from "firebase/firestore"
-import { db, isFirebaseConfigured, COLLECTIONS } from "@/lib/firebase"
+import { db, isFirebaseConfigured, ROOT_COLLECTIONS, BRANCH_SUBS, branchCollection } from "@/lib/firebase"
 import type {
   Branch,
   Product,
@@ -39,21 +39,20 @@ interface DataContextType {
   // Branch operations
   fetchBranches: () => Promise<void>
   
-  // Product operations
-  fetchProducts: () => Promise<void>
+  // Product operations (branch-scoped)
+  fetchProducts: (branchId?: string) => Promise<void>
   addProduct: (product: Omit<Product, "id" | "createdAt" | "updatedAt">) => Promise<string>
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>
   deleteProduct: (id: string) => Promise<void>
   
-  // Inventory operations
+  // Inventory operations (branch-scoped)
   fetchInventory: (branchId?: string) => Promise<void>
   updateInventoryQuantity: (id: string, quantity: number) => Promise<void>
   addInventoryItem: (item: Omit<InventoryItem, "id" | "updatedAt">) => Promise<string>
   
-  // Sales operations
+  // Sales operations (branch-scoped)
   fetchSales: (branchId?: string) => Promise<void>
   createSale: (
-    branchId: string,
     items: CartItem[],
     paymentMethod: PaymentMethod,
     discount?: number,
@@ -61,7 +60,7 @@ interface DataContextType {
     prescriptionNumber?: string
   ) => Promise<string>
   
-  // Current branch for staff
+  // Current branch selection
   currentBranchId: string | null
   setCurrentBranchId: (id: string | null) => void
 }
@@ -77,7 +76,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
 
-  // Initialize and fetch data
+  /**
+   * Resolves the effective branch ID for queries.
+   * Staff always uses their assigned branch.
+   * Admin uses the selected branch (currentBranchId).
+   */
+  const getEffectiveBranchId = useCallback((overrideBranchId?: string): string | null => {
+    if (overrideBranchId) return overrideBranchId
+    if (user?.role === "staff" && user.branchId) return user.branchId
+    return currentBranchId
+  }, [user, currentBranchId])
+
+  // ─── Initialize ───
   useEffect(() => {
     const initializeData = async () => {
       setLoading(true)
@@ -86,12 +96,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (user?.role === "staff" && user.branchId) {
           setCurrentBranchId(user.branchId)
         } else if (user?.role === "admin") {
+          // Admin starts with no branch selected
           setCurrentBranchId(null)
         }
         
-        // Fetch initial data
+        // Fetch branch list (always needed for branch selector)
         await fetchBranches()
-        await fetchProducts()
       } catch (error) {
         console.error("Error initializing data:", error)
       } finally {
@@ -104,15 +114,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [user])
 
-  // Fetch branches
+  // ─── Auto-fetch data when branch changes ───
+  useEffect(() => {
+    const branchId = getEffectiveBranchId()
+    if (branchId) {
+      fetchProducts(branchId)
+      fetchInventory(branchId)
+      fetchSales(branchId)
+    } else {
+      // No branch selected (admin hasn't picked one yet)
+      setProducts([])
+      setInventory([])
+      setSales([])
+    }
+  }, [currentBranchId, user])
+
+  // ═══════════════════════════════════════════
+  // BRANCH OPERATIONS (top-level collection)
+  // ═══════════════════════════════════════════
+
   const fetchBranches = useCallback(async () => {
     if (!isFirebaseConfigured() || !db) {
-      console.warn("Firebase is not configured. Please add your Firebase environment variables.")
+      console.warn("Firebase is not configured.")
       return
     }
     
     try {
-      const snapshot = await getDocs(collection(db, COLLECTIONS.BRANCHES))
+      const snapshot = await getDocs(collection(db, ROOT_COLLECTIONS.BRANCHES))
       const data = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -125,183 +153,197 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Fetch products
-  const fetchProducts = useCallback(async () => {
-    if (!isFirebaseConfigured() || !db) {
-      console.warn("Firebase is not configured. Please add your Firebase environment variables.")
-      return
-    }
+  // ═══════════════════════════════════════════
+  // PRODUCT OPERATIONS (branches/{branchId}/products)
+  // ═══════════════════════════════════════════
+
+  const fetchProducts = useCallback(async (branchId?: string) => {
+    const targetBranchId = getEffectiveBranchId(branchId)
+    if (!targetBranchId || !isFirebaseConfigured() || !db) return
     
     try {
       const snapshot = await getDocs(
-        query(collection(db, COLLECTIONS.PRODUCTS), orderBy("name"))
+        query(branchCollection(targetBranchId, BRANCH_SUBS.PRODUCTS), orderBy("name"))
       )
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
+      const data = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate(),
+        updatedAt: d.data().updatedAt?.toDate(),
       })) as Product[]
       setProducts(data)
     } catch (error) {
       console.error("Error fetching products:", error)
     }
-  }, [])
+  }, [getEffectiveBranchId])
 
-  // Add product
   const addProduct = useCallback(async (
     product: Omit<Product, "id" | "createdAt" | "updatedAt">
   ): Promise<string> => {
-    const now = new Date()
-    
+    const targetBranchId = getEffectiveBranchId()
+    if (!targetBranchId) throw new Error("No branch selected")
     if (!db) throw new Error("Database not configured")
     
-    const docRef = await addDoc(collection(db, COLLECTIONS.PRODUCTS), {
+    const now = new Date()
+    const docRef = await addDoc(branchCollection(targetBranchId, BRANCH_SUBS.PRODUCTS), {
       ...product,
       createdAt: Timestamp.fromDate(now),
       updatedAt: Timestamp.fromDate(now),
     })
-    await fetchProducts()
+    await fetchProducts(targetBranchId)
     return docRef.id
-  }, [fetchProducts])
+  }, [getEffectiveBranchId, fetchProducts])
 
-  // Update product
   const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
+    const targetBranchId = getEffectiveBranchId()
+    if (!targetBranchId) throw new Error("No branch selected")
+    if (!db) throw new Error("Database not configured")
+    
     const now = new Date()
-    
-    if (!db) throw new Error("Database not configured")
-    
-    await updateDoc(doc(db, COLLECTIONS.PRODUCTS, id), {
-      ...updates,
-      updatedAt: Timestamp.fromDate(now),
-    })
-    await fetchProducts()
-  }, [fetchProducts])
+    await updateDoc(
+      doc(db, ROOT_COLLECTIONS.BRANCHES, targetBranchId, BRANCH_SUBS.PRODUCTS, id),
+      {
+        ...updates,
+        updatedAt: Timestamp.fromDate(now),
+      }
+    )
+    await fetchProducts(targetBranchId)
+  }, [getEffectiveBranchId, fetchProducts])
 
-  // Delete product
   const deleteProduct = useCallback(async (id: string) => {
+    const targetBranchId = getEffectiveBranchId()
+    if (!targetBranchId) throw new Error("No branch selected")
     if (!db) throw new Error("Database not configured")
     
-    await deleteDoc(doc(db, COLLECTIONS.PRODUCTS, id))
-    await fetchProducts()
-  }, [fetchProducts])
+    await deleteDoc(
+      doc(db, ROOT_COLLECTIONS.BRANCHES, targetBranchId, BRANCH_SUBS.PRODUCTS, id)
+    )
+    await fetchProducts(targetBranchId)
+  }, [getEffectiveBranchId, fetchProducts])
 
-  // Fetch inventory
+  // ═══════════════════════════════════════════
+  // INVENTORY OPERATIONS (branches/{branchId}/inventory)
+  // ═══════════════════════════════════════════
+
   const fetchInventory = useCallback(async (branchId?: string) => {
-    const targetBranchId = branchId || currentBranchId
-    
-    if (!isFirebaseConfigured() || !db) {
-      console.warn("Firebase is not configured. Please add your Firebase environment variables.")
-      return
-    }
+    const targetBranchId = getEffectiveBranchId(branchId)
+    if (!targetBranchId || !isFirebaseConfigured() || !db) return
     
     try {
-      let q = query(collection(db, COLLECTIONS.INVENTORY))
-      if (targetBranchId) {
-        q = query(q, where("branchId", "==", targetBranchId))
-      }
+      // Fetch inventory items from branch subcollection
+      const invSnapshot = await getDocs(branchCollection(targetBranchId, BRANCH_SUBS.INVENTORY))
       
-      const snapshot = await getDocs(q)
-      const data = await Promise.all(
-        snapshot.docs.map(async (docSnap) => {
+      // Fetch products from the same branch to join
+      const prodSnapshot = await getDocs(branchCollection(targetBranchId, BRANCH_SUBS.PRODUCTS))
+      const productsMap = new Map<string, Product>()
+      prodSnapshot.docs.forEach((d) => {
+        productsMap.set(d.id, {
+          id: d.id,
+          ...d.data(),
+          createdAt: d.data().createdAt?.toDate(),
+          updatedAt: d.data().updatedAt?.toDate(),
+        } as Product)
+      })
+
+      const data = invSnapshot.docs
+        .map((docSnap) => {
           const invData = docSnap.data()
-          const productDoc = await getDocs(
-            query(collection(db, COLLECTIONS.PRODUCTS), where("__name__", "==", invData.productId))
-          )
-          const branchDoc = await getDocs(
-            query(collection(db, COLLECTIONS.BRANCHES), where("__name__", "==", invData.branchId))
-          )
+          const product = productsMap.get(invData.productId)
           
+          if (!product) return null // skip orphaned inventory
+
           return {
             id: docSnap.id,
-            ...invData,
+            productId: invData.productId,
+            quantity: invData.quantity,
+            criticalLevel: invData.criticalLevel,
+            batchNumber: invData.batchNumber,
             expiryDate: invData.expiryDate?.toDate(),
             lastRestocked: invData.lastRestocked?.toDate(),
             updatedAt: invData.updatedAt?.toDate(),
-            product: productDoc.docs[0]?.data() as Product,
-            branch: branchDoc.docs[0]?.data() as Branch,
+            product,
           } as InventoryWithProduct
         })
-      )
+        .filter(Boolean) as InventoryWithProduct[]
       
       setInventory(data)
     } catch (error) {
       console.error("Error fetching inventory:", error)
     }
-  }, [currentBranchId])
+  }, [getEffectiveBranchId])
 
-  // Update inventory quantity
   const updateInventoryQuantity = useCallback(async (id: string, quantity: number) => {
-    const now = new Date()
-    
+    const targetBranchId = getEffectiveBranchId()
+    if (!targetBranchId) throw new Error("No branch selected")
     if (!db) throw new Error("Database not configured")
     
-    await updateDoc(doc(db, COLLECTIONS.INVENTORY, id), {
-      quantity,
-      updatedAt: Timestamp.fromDate(now),
-    })
-    await fetchInventory()
-  }, [fetchInventory])
+    const now = new Date()
+    await updateDoc(
+      doc(db, ROOT_COLLECTIONS.BRANCHES, targetBranchId, BRANCH_SUBS.INVENTORY, id),
+      {
+        quantity,
+        updatedAt: Timestamp.fromDate(now),
+      }
+    )
+    await fetchInventory(targetBranchId)
+  }, [getEffectiveBranchId, fetchInventory])
 
-  // Add inventory item
   const addInventoryItem = useCallback(async (
     item: Omit<InventoryItem, "id" | "updatedAt">
   ): Promise<string> => {
-    const now = new Date()
-    
+    const targetBranchId = getEffectiveBranchId()
+    if (!targetBranchId) throw new Error("No branch selected")
     if (!db) throw new Error("Database not configured")
     
-    const docRef = await addDoc(collection(db, COLLECTIONS.INVENTORY), {
+    const now = new Date()
+    const docRef = await addDoc(branchCollection(targetBranchId, BRANCH_SUBS.INVENTORY), {
       ...item,
       expiryDate: Timestamp.fromDate(item.expiryDate),
       lastRestocked: Timestamp.fromDate(item.lastRestocked),
       updatedAt: Timestamp.fromDate(now),
     })
-    await fetchInventory()
+    await fetchInventory(targetBranchId)
     return docRef.id
-  }, [fetchInventory])
+  }, [getEffectiveBranchId, fetchInventory])
 
-  // Fetch sales
+  // ═══════════════════════════════════════════
+  // SALES OPERATIONS (branches/{branchId}/sales)
+  // ═══════════════════════════════════════════
+
   const fetchSales = useCallback(async (branchId?: string) => {
-    const targetBranchId = branchId || currentBranchId
-    
-    if (!isFirebaseConfigured() || !db) {
-      console.warn("Firebase is not configured. Please add your Firebase environment variables.")
-      return
-    }
+    const targetBranchId = getEffectiveBranchId(branchId)
+    if (!targetBranchId || !isFirebaseConfigured() || !db) return
     
     try {
-      let q = query(collection(db, COLLECTIONS.SALES), orderBy("createdAt", "desc"))
-      if (targetBranchId) {
-        q = query(
-          collection(db, COLLECTIONS.SALES),
-          where("branchId", "==", targetBranchId),
+      const snapshot = await getDocs(
+        query(
+          branchCollection(targetBranchId, BRANCH_SUBS.SALES),
           orderBy("createdAt", "desc")
         )
-      }
-      
-      const snapshot = await getDocs(q)
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate(),
+      )
+      const data = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toDate(),
       })) as Sale[]
       
       setSales(data)
     } catch (error) {
       console.error("Error fetching sales:", error)
     }
-  }, [currentBranchId])
+  }, [getEffectiveBranchId])
 
-  // Create sale
   const createSale = useCallback(async (
-    branchId: string,
     items: CartItem[],
     paymentMethod: PaymentMethod,
     discount: number = 0,
     customerName?: string,
     prescriptionNumber?: string
   ): Promise<string> => {
+    const targetBranchId = getEffectiveBranchId()
+    if (!targetBranchId) throw new Error("No branch selected")
+    if (!db) throw new Error("Database not configured")
+    
     const now = new Date()
     
     const saleItems: SaleItem[] = items.map((item) => ({
@@ -317,7 +359,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const total = subtotal - discount + tax
     
     const saleData = {
-      branchId,
       userId: user?.id || "unknown",
       items: saleItems,
       subtotal,
@@ -328,23 +369,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
       status: "completed" as const,
       customerName,
       prescriptionNumber,
-      createdAt: now,
+      createdAt: Timestamp.fromDate(now),
     }
-    
-    if (!db) throw new Error("Database not configured")
     
     const batch = writeBatch(db)
     
-    // Create sale document
-    const saleRef = doc(collection(db, COLLECTIONS.SALES))
-    batch.set(saleRef, {
-      ...saleData,
-      createdAt: Timestamp.fromDate(now),
-    })
+    // Create sale document in branch subcollection
+    const saleRef = doc(collection(db, ROOT_COLLECTIONS.BRANCHES, targetBranchId, BRANCH_SUBS.SALES))
+    batch.set(saleRef, saleData)
     
-    // Deduct inventory
+    // Deduct inventory (from the same branch subcollection)
     for (const item of items) {
-      const invRef = doc(db, COLLECTIONS.INVENTORY, item.inventoryId)
+      const invRef = doc(
+        db,
+        ROOT_COLLECTIONS.BRANCHES,
+        targetBranchId,
+        BRANCH_SUBS.INVENTORY,
+        item.inventoryId
+      )
       batch.update(invRef, {
         quantity: increment(-item.quantity),
         updatedAt: Timestamp.fromDate(now),
@@ -352,10 +394,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
     
     await batch.commit()
-    await fetchSales(branchId)
-    await fetchInventory(branchId)
+    await fetchSales(targetBranchId)
+    await fetchInventory(targetBranchId)
     return saleRef.id
-  }, [user, fetchSales, fetchInventory])
+  }, [user, getEffectiveBranchId, fetchSales, fetchInventory])
 
   return (
     <DataContext.Provider

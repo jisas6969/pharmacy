@@ -42,7 +42,7 @@ export default function UsersPage() {
     }
   }, [user, isAdmin, router])
 
-  // 🔥 Fetch users from Firestore
+  // 🔥 FETCH ALL USERS (GLOBAL)
   useEffect(() => {
     const fetchUsers = async () => {
       if (!db) return
@@ -59,12 +59,7 @@ export default function UsersPage() {
             name: data.name,
             role: data.role,
             branchId: data.branchId,
-            createdAt: data.createdAt?.toDate
-              ? data.createdAt.toDate()
-              : data.createdAt,
-            updatedAt: data.updatedAt?.toDate
-              ? data.updatedAt.toDate()
-              : data.updatedAt,
+            status: data.status || "active",
           }
         })
 
@@ -79,12 +74,6 @@ export default function UsersPage() {
     fetchUsers()
   }, [])
 
-  const getBranchName = (branchId: string | null) => {
-    if (!branchId) return "All Branches"
-    const branch = branches.find((b) => b.id === branchId)
-    return branch?.name.replace("Arsenic Pharmacy - ", "") || branchId
-  }
-
   if (loading) {
     return <div className="p-6">Loading users...</div>
   }
@@ -96,7 +85,7 @@ export default function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold">User Management</h1>
           <p className="text-muted-foreground text-sm">
-            Manage staff accounts and permissions
+            All users across all branches
           </p>
         </div>
         <Button>
@@ -163,60 +152,80 @@ export default function UsersPage() {
                 <TableRow>
                   <TableHead>User</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Branch Access</TableHead>
+                  <TableHead>Branch</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9">
-                          <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                            {u.name
-                              ?.split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{u.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {u.email}
-                          </p>
+                {users.map((u) => {
+                  const branchName = branches.find(
+                    (b) => b.id === u.branchId
+                  )?.name || "—"
+
+                  return (
+                    <TableRow key={u.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9">
+                            <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                              {u.name
+                                ?.split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{u.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {u.email}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
+                      </TableCell>
 
-                    <TableCell>
-                      <Badge
-                        variant={u.role === "admin" ? "default" : "secondary"}
-                        className={cn(u.role === "admin" && "bg-primary")}
-                      >
-                        {u.role === "admin" ? (
-                          <Shield className="h-3 w-3 mr-1" />
-                        ) : (
-                          <Store className="h-3 w-3 mr-1" />
-                        )}
-                        {u.role}
-                      </Badge>
-                    </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={u.role === "admin" ? "default" : "secondary"}
+                          className={cn(u.role === "admin" && "bg-primary")}
+                        >
+                          {u.role === "admin" ? (
+                            <Shield className="h-3 w-3 mr-1" />
+                          ) : (
+                            <Store className="h-3 w-3 mr-1" />
+                          )}
+                          {u.role}
+                        </Badge>
+                      </TableCell>
 
-                    <TableCell>
-                      <Badge variant="outline">
-                        {getBranchName(u.branchId)}
-                      </Badge>
-                    </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {u.role === "admin" ? "All Branches" : branchName}
+                        </span>
+                      </TableCell>
 
-                    <TableCell>
-                      <Badge className="bg-green-50 text-green-700 border-green-200">
-                        Active
-                      </Badge>
+                      <TableCell>
+                        <Badge
+                          className={cn(
+                            u.status === "active"
+                              ? "bg-green-50 text-green-700 border-green-200"
+                              : "bg-red-50 text-red-700 border-red-200"
+                          )}
+                        >
+                          {u.status || "Active"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+
+                {users.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+                      No users found
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </ScrollArea>

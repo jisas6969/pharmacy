@@ -8,7 +8,7 @@ import {
   type User as FirebaseUser,
 } from "firebase/auth"
 import { doc, getDoc } from "firebase/firestore"
-import { auth, db, isFirebaseConfigured, COLLECTIONS } from "@/lib/firebase"
+import { auth, db, isFirebaseConfigured, ROOT_COLLECTIONS, BRANCH_SUBS } from "@/lib/firebase"
 import type { User } from "@/lib/types"
 
 interface AuthContextType {
@@ -28,27 +28,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // 🔥 Fetch user profile from Firestore
+  /**
+   * 🔥 Two-step user profile fetch:
+   *
+   * 1. Read users/{uid} → get role, branchId, basic info
+   * 2. If STAFF → read branches/{branchId}/users/{uid} → get full profile
+   *    If ADMIN → use the mapping doc directly (no branch)
+   */
   const fetchUserProfile = useCallback(async (uid: string): Promise<User | null> => {
     if (!db) return null
 
     try {
-      const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, uid))
+      // Step 1: Read lightweight mapping from users/{uid}
+      const mappingDoc = await getDoc(doc(db, ROOT_COLLECTIONS.USERS, uid))
 
-      if (!userDoc.exists()) {
+      if (!mappingDoc.exists()) {
         throw new Error("User record not found in Firestore")
       }
 
-      const data = userDoc.data()
+      const mapping = mappingDoc.data()
+      const role = mapping.role
+      const branchId = mapping.branchId || null
 
+      // Step 2: Branch-specific profile for staff
+      if (role === "staff" && branchId) {
+        const profileDoc = await getDoc(
+          doc(db, ROOT_COLLECTIONS.BRANCHES, branchId, BRANCH_SUBS.USERS, uid)
+        )
+
+        if (!profileDoc.exists()) {
+          throw new Error("Staff profile not found in branch")
+        }
+
+        const profile = profileDoc.data()
+
+        return {
+          id: uid,
+          email: profile.email || mapping.email,
+          name: profile.name || mapping.name,
+          role: profile.role || role,
+          branchId,
+          status: profile.status || mapping.status || "active",
+          createdAt: profile.createdAt?.toDate ? profile.createdAt.toDate() : profile.createdAt,
+          updatedAt: profile.updatedAt?.toDate ? profile.updatedAt.toDate() : profile.updatedAt,
+        }
+      }
+
+      // Admin: use mapping doc directly (no branch assignment)
       return {
-        id: userDoc.id,
-        email: data.email,
-        name: data.name,
-        role: data.role,
-        branchId: data.branchId,
-        createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
-updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : data.updatedAt,
+        id: uid,
+        email: mapping.email,
+        name: mapping.name,
+        role: mapping.role,
+        branchId: null,
+        status: mapping.status || "active",
+        createdAt: mapping.createdAt?.toDate ? mapping.createdAt.toDate() : mapping.createdAt,
+        updatedAt: mapping.updatedAt?.toDate ? mapping.updatedAt.toDate() : mapping.updatedAt,
       }
     } catch (err) {
       console.error("Error fetching user profile:", err)

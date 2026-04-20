@@ -47,13 +47,7 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const { user, loading: authLoading } = useAuth()
-  const {
-    fetchBranches,
-    fetchProducts,
-    fetchInventory,
-    fetchSales,
-    loading: dataLoading,
-  } = useData()
+  const { loading: dataLoading } = useData()
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -61,16 +55,6 @@ export default function DashboardLayout({
       router.push("/login")
     }
   }, [user, authLoading, router])
-
-  // Fetch initial data
-  useEffect(() => {
-    if (user) {
-      fetchBranches()
-      fetchProducts()
-      fetchInventory()
-      fetchSales()
-    }
-  }, [user, fetchBranches, fetchProducts, fetchInventory, fetchSales])
 
   if (authLoading || !user) {
     return (

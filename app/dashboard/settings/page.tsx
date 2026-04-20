@@ -35,7 +35,8 @@ import { isFirebaseConfigured } from "@/lib/firebase"
 
 export default function SettingsPage() {
   const router = useRouter()
-  const { user, isDemo } = useAuth()
+  const { user } = useAuth()
+  const isDemo = false // Demo mode removed — Firebase is always required
   const { branches } = useData()
   
   const isAdmin = user?.role === "admin"
@@ -257,25 +258,6 @@ export default function SettingsPage() {
             </div>
             <Switch disabled={isDemo} />
           </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>Session Timeout</Label>
-              <p className="text-sm text-muted-foreground">
-                Auto logout after inactivity
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                value="30"
-                className="w-20"
-                disabled={isDemo}
-              />
-              <span className="text-sm text-muted-foreground">minutes</span>
-            </div>
-          </div>
-          <Separator />
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label>Audit Logging</Label>

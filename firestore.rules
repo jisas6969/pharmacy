@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── User mapping (auth lookup) ───
+    // Users can read their own mapping doc.
+    // Writing is restricted to admin SDK (server-side user creation).
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false; // Admin SDK only
+    }
+
+    // ─── Branch metadata ───
+    // Any authenticated user can read branch list (needed for branch selector).
+    // Only admin can write branch metadata.
+    match /branches/{branchId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    // ─── Branch-scoped data (users, products, inventory, sales) ───
+    // Access allowed if:
+    //   - User is an admin (role == "admin"), OR
+    //   - User's branchId matches the branch being accessed
+    match /branches/{branchId}/{document=**} {
+      allow read, write: if request.auth != null
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+          ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branchId == branchId
+        );
+    }
+  }
+}
