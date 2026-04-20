@@ -28,32 +28,52 @@ export default function LoginPage() {
       await signIn(email, password)
       router.push("/dashboard")
     } catch {
-      // Error is handled in context
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md space-y-6">
-        {/* Logo and Title */}
-        <div className="flex flex-col items-center space-y-2">
-          <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-primary text-primary-foreground">
-            <Building2 className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Arsenic Pharmacy</h1>
-          <p className="text-muted-foreground text-sm">Centralized Inventory & POS System</p>
-        </div>
+    <main className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
 
-        <Card className="border-border shadow-lg">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl font-semibold text-center">Welcome back</CardTitle>
-            <CardDescription className="text-center">
-              Sign in to access your dashboard
-            </CardDescription>
+      {/* 🔥 Blurred Background */}
+      <div
+  className="absolute inset-0 bg-cover bg-center"
+  style={{ backgroundImage: "url('/bg.jpg')" }}
+/>
+
+      {/* 🔥 Overlay */}
+      <div className="absolute inset-0 bg-black/40" />
+
+      {/* 🔥 Content */}
+      <div className="relative w-full max-w-md">
+
+        <Card className="shadow-xl backdrop-blur-md bg-white/90 border">
+          
+          {/* ✅ HEADER (dito na lahat) */}
+          <CardHeader className="text-center space-y-3">
+
+            {/* Logo */}
+            <div className="flex justify-center">
+              <div className="flex items-center justify-center w-14 h-14 rounded-xl bg-primary text-primary-foreground">
+                <Building2 className="w-7 h-7" />
+              </div>
+            </div>
+
+            {/* Title + Subtitle */}
+            <div>
+              <h1 className="text-xl font-bold">Arsenic Pharmacy</h1>
+              <p className="text-xs text-muted-foreground">
+                Centralized Inventory & POS System
+              </p>
+            </div>
+
+
+
           </CardHeader>
+
           <CardContent className="space-y-4">
+
             {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -63,6 +83,7 @@ export default function LoginPage() {
 
             {firebaseConfigured ? (
               <form onSubmit={handleSubmit} className="space-y-4">
+
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -71,10 +92,10 @@ export default function LoginPage() {
                     placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    autoComplete="email"
                     required
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
                   <Input
@@ -83,49 +104,34 @@ export default function LoginPage() {
                     placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
                     required
                   />
                 </div>
+
                 <Button
                   type="submit"
                   className="w-full"
                   disabled={isSubmitting || loading}
                 >
-                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isSubmitting && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
                   Sign In
                 </Button>
+
               </form>
             ) : (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  Firebase is not configured. Add your Firebase environment variables to enable authentication.
+                  Firebase is not configured. Add your Firebase environment variables.
                 </AlertDescription>
               </Alert>
             )}
+
           </CardContent>
         </Card>
 
-        {/* Firebase Setup Instructions */}
-        {!firebaseConfigured && (
-          <Card className="border-border">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Firebase Setup</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground space-y-2">
-              <p>To enable full authentication, add these environment variables:</p>
-              <ul className="list-disc list-inside space-y-1">
-                <li>NEXT_PUBLIC_FIREBASE_API_KEY</li>
-                <li>NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN</li>
-                <li>NEXT_PUBLIC_FIREBASE_PROJECT_ID</li>
-                <li>NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET</li>
-                <li>NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID</li>
-                <li>NEXT_PUBLIC_FIREBASE_APP_ID</li>
-              </ul>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </main>
   )
