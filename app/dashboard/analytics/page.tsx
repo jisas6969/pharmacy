@@ -54,7 +54,7 @@ import {
   isSameDay,
   isWithinInterval,
 } from "date-fns"
-import { cn } from "@/lib/utils"
+import { cn, formatCurrency } from "@/lib/utils"
 
 type DateRange = "7d" | "30d" | "90d"
 
@@ -268,7 +268,7 @@ export default function AnalyticsPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${kpis.totalRevenue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(kpis.totalRevenue)}</div>
             <div className="flex items-center text-xs text-muted-foreground mt-1">
               {kpis.revenueChange >= 0 ? (
                 <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
@@ -314,7 +314,7 @@ export default function AnalyticsPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${kpis.avgTransaction.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(kpis.avgTransaction)}</div>
             <div className="flex items-center text-xs text-muted-foreground mt-1">
               {kpis.avgChange >= 0 ? (
                 <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
@@ -377,7 +377,7 @@ export default function AnalyticsPage() {
                     tick={{ fontSize: 11 }}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) => `$${value}`}
+                    tickFormatter={(value) => `₱${value}`}
                   />
                   <Tooltip
                     contentStyle={{
@@ -385,7 +385,7 @@ export default function AnalyticsPage() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
                     }}
-                    formatter={(value: number) => [`$${value.toFixed(2)}`, "Revenue"]}
+                    formatter={(value: number) => [formatCurrency(value), "Revenue"]}
                   />
                   <Line
                     type="monotone"
@@ -467,7 +467,7 @@ export default function AnalyticsPage() {
                       <TableCell className="font-medium">{product.name}</TableCell>
                       <TableCell className="text-right">{product.quantity}</TableCell>
                       <TableCell className="text-right font-medium">
-                        ${product.revenue.toFixed(2)}
+                        {formatCurrency(product.revenue)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -513,7 +513,7 @@ export default function AnalyticsPage() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
                     }}
-                    formatter={(value: number) => [`$${value.toFixed(2)}`, "Revenue"]}
+                    formatter={(value: number) => [formatCurrency(value), "Revenue"]}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -530,7 +530,7 @@ export default function AnalyticsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">
-                      ${method.value.toFixed(2)}
+                      {formatCurrency(method.value)}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       ({method.percent.toFixed(1)}%)

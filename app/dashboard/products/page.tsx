@@ -60,7 +60,7 @@ import {
 import { toast } from "sonner"
 import type { Product, ProductCategory, ProductFormData } from "@/lib/types"
 import { PRODUCT_CATEGORIES } from "@/lib/types"
-import { cn } from "@/lib/utils"
+import { cn, formatCurrency } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 
 const emptyFormData: ProductFormData = {
@@ -343,7 +343,7 @@ export default function ProductsPage() {
               
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="price">Price ($) *</Label>
+                  <Label htmlFor="price">Price (₱) *</Label>
                   <Input
                     id="price"
                     type="number"
@@ -481,7 +481,7 @@ export default function ProductsPage() {
                       {product.sku}
                     </TableCell>
                     <TableCell className="font-medium">
-                      ${product.price.toFixed(2)}
+                      {formatCurrency(product.price)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {product.unit}

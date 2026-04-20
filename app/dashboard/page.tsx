@@ -26,6 +26,7 @@ import {
   Bar,
 } from "recharts"
 import { format, subDays, startOfDay, isSameDay } from "date-fns"
+import { formatCurrency } from "@/lib/utils"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
@@ -146,7 +147,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${stats.todayRevenue.toFixed(2)}
+              {formatCurrency(stats.todayRevenue)}
             </div>
             <div className="flex items-center text-xs text-muted-foreground">
               {stats.revenueChange >= 0 ? (
@@ -252,7 +253,7 @@ export default function DashboardPage() {
                     tick={{ fontSize: 12 }}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) => `$${value}`}
+                    tickFormatter={(value) => `₱${value}`}
                   />
                   <Tooltip
                     contentStyle={{
@@ -260,7 +261,7 @@ export default function DashboardPage() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
                     }}
-                    formatter={(value: number) => [`$${value.toFixed(2)}`, "Revenue"]}
+                    formatter={(value: number) => [formatCurrency(value), "Revenue"]}
                   />
                   <Area
                     type="monotone"

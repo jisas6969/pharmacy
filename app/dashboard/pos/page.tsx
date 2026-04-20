@@ -43,7 +43,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import type { CartItem, InventoryWithProduct, PaymentMethod } from "@/lib/types"
-import { cn } from "@/lib/utils"
+import { cn, formatCurrency } from "@/lib/utils"
 
 export default function POSPage() {
   const { user } = useAuth()
@@ -207,13 +207,22 @@ export default function POSPage() {
     
     setIsProcessing(true)
     try {
-      await createSale(
-        cart,
-        method,
-        discount,
-        customerName.trim() || undefined,
-        prescriptionNumber.trim() || undefined
-      )
+      const finalCustomerName =
+  method === "cash"
+    ? "Walk-in Customer"
+    : customerName.trim() || "Walk-in Customer"
+
+const finalPrescriptionNumber = hasPrescriptionItems
+  ? prescriptionNumber.trim()
+  : null
+
+await createSale(
+  cart,
+  method,
+  discount,
+  finalCustomerName,
+  finalPrescriptionNumber
+)
       
       setLastSaleTotal(totals.total)
       setShowPaymentDialog(false)
@@ -331,7 +340,7 @@ export default function POSPage() {
                   </div>
                   <div className="flex justify-between items-center mt-2">
                     <span className="font-semibold text-primary">
-                      ${item.product.price.toFixed(2)}
+                      {formatCurrency(item.product.price)}
                     </span>
                     <span className={cn(
                       "text-xs",
@@ -397,7 +406,7 @@ export default function POSPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{item.product.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      ${item.product.price.toFixed(2)} x {item.quantity}
+                      {formatCurrency(item.product.price)} x {item.quantity}
                     </p>
                     {item.product.requiresPrescription && (
                       <Badge variant="outline" className="mt-1 text-[10px]">
@@ -476,7 +485,7 @@ export default function POSPage() {
           <div className="space-y-1 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal ({totals.itemCount} items)</span>
-              <span>${totals.subtotal.toFixed(2)}</span>
+              <span>{formatCurrency(totals.subtotal)}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-muted-foreground">Discount</span>
@@ -492,12 +501,12 @@ export default function POSPage() {
             </div>
             <div className="flex justify-between text-muted-foreground">
               <span>Tax (5%)</span>
-              <span>${totals.tax.toFixed(2)}</span>
+              <span>{formatCurrency(totals.tax)}</span>
             </div>
             <Separator />
             <div className="flex justify-between font-semibold text-lg">
               <span>Total</span>
-              <span className="text-primary">${totals.total.toFixed(2)}</span>
+              <span className="text-primary">{formatCurrency(totals.total)}</span>
             </div>
           </div>
 
@@ -516,12 +525,13 @@ export default function POSPage() {
       {/* Payment Dialog */}
       <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Select Payment Method</DialogTitle>
-            <DialogDescription>
-              Total: <span className="font-semibold text-primary">${totals.total.toFixed(2)}</span>
-            </DialogDescription>
-          </DialogHeader>
+  <DialogHeader>
+    <DialogTitle>Select Payment Method</DialogTitle>
+    <DialogDescription>
+      Choose how the customer will pay. <br />
+      Total: <span className="font-semibold text-primary">{formatCurrency(totals.total)}</span>
+    </DialogDescription>
+  </DialogHeader>
           <div className="grid grid-cols-3 gap-3 py-4">
             <Button
               variant="outline"
@@ -562,14 +572,21 @@ export default function POSPage() {
       {/* Success Dialog */}
       <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
         <DialogContent className="sm:max-w-md text-center">
-          <div className="flex flex-col items-center gap-4 py-6">
+  <DialogHeader>
+    <DialogTitle>Payment Successful</DialogTitle>
+    <DialogDescription>
+      The transaction has been completed successfully.
+    </DialogDescription>
+  </DialogHeader>
+
+  <div className="flex flex-col items-center gap-4 py-6">
             <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-600">
               <CheckCircle2 className="h-8 w-8" />
             </div>
             <div>
               <h3 className="text-xl font-semibold">Payment Successful</h3>
               <p className="text-muted-foreground mt-1">
-                Transaction completed for ${lastSaleTotal.toFixed(2)}
+                Transaction completed for {formatCurrency(lastSaleTotal)}
               </p>
             </div>
           </div>
